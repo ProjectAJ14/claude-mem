@@ -1,10 +1,10 @@
 {
-  "name": "thedotmack",
+  "name": "projectaj14",
   "owner": {
     "name": "Alex Newman"
   },
   "metadata": {
-    "description": "Plugins by Alex Newman (thedotmack)"
+    "description": "Fork of thedotmack's plugins, renamed so it can be installed alongside upstream"
   },
   "plugins": [
     {
