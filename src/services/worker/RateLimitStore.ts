@@ -236,6 +236,14 @@ export function shouldAbortForQuota(
       };
     }
 
+    // The overage bucket is not a 0..1 fraction of a plan allowance like the
+    // other windows are, so the utilization thresholds do not apply to it.
+    // Anthropic reports e.g. utilization 1.11 alongside status
+    // 'allowed_warning' and isUsingOverage false — a bucket the account is not
+    // drawing on cannot be burned through. Only a provider-side rejection
+    // (handled above) counts for an unused overage bucket.
+    if (window === 'overage' && entry.isUsingOverage !== true) continue;
+
     if (typeof util === 'number' && util >= threshold) {
       return {
         abort: true,

@@ -210,6 +210,57 @@ describe('shouldAbortForQuota — cli/oauth auth', () => {
     const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
     expect(decision.abort).toBe(false);
   });
+
+  // The overage bucket is not a 0..1 fraction of a plan allowance, so the
+  // utilization thresholds do not apply to it. Anthropic reports values above
+  // 1.0 there while still serving the request.
+  it('does not abort on an overage bucket the account is not drawing on', () => {
+    store.set({
+      rateLimitType: 'overage',
+      utilization: 1.11,
+      status: 'allowed_warning',
+      isUsingOverage: false,
+    });
+    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
+    expect(decision.abort).toBe(false);
+  });
+
+  it('still aborts on overage once the account is actually drawing on it', () => {
+    store.set({
+      rateLimitType: 'overage',
+      utilization: 1.11,
+      status: 'allowed_warning',
+      isUsingOverage: true,
+    });
+    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
+    expect(decision.abort).toBe(true);
+    expect(decision.window).toBe('overage');
+  });
+
+  it('still aborts on a provider-rejected overage bucket even when unused', () => {
+    store.set({
+      rateLimitType: 'overage',
+      utilization: 1.11,
+      overageStatus: 'rejected',
+      isUsingOverage: false,
+    });
+    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
+    expect(decision.abort).toBe(true);
+    expect(decision.reason).toContain('rejected by provider');
+  });
+
+  it('leaves the five_hour guard armed while overage is ignored', () => {
+    store.set({
+      rateLimitType: 'overage',
+      utilization: 1.11,
+      status: 'allowed_warning',
+      isUsingOverage: false,
+    });
+    store.set({ rateLimitType: 'five_hour', utilization: 0.96 });
+    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
+    expect(decision.abort).toBe(true);
+    expect(decision.window).toBe('five_hour');
+  });
 });
 
 // usage_limit_hit telemetry: one event per exhausted window, never one per
