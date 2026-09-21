@@ -1,19 +1,22 @@
 ---
 title: "Telemetry"
-description: "Anonymous usage analytics — on by default, fully documented, one command to opt out"
+description: "Removed in this fork — no analytics are sent"
 ---
 
 # Telemetry
 
-Claude-mem includes anonymous usage analytics (via PostHog) to help prioritize fixes and features.
+<Warning>
+**This fork sends no telemetry.** `explainTelemetryConsent()` in
+`src/services/telemetry/consent.ts` returns disabled unconditionally, so no
+PostHog client is ever constructed and no event is ever queued — not with
+`CLAUDE_MEM_TELEMETRY=1`, not with a `telemetry.json` recording consent. There
+is no installer consent prompt, and `npx claude-mem telemetry enable` refuses.
+`npx claude-mem telemetry status` always reports DISABLED.
 
-**It is on by default (opt-out).** Events are anonymous, identified only by a random install UUID, and every analytics property passes a strict whitelist — see [What is collected](#what-is-collected) and [What is NEVER collected](#what-is-never-collected) below. Turning it off is one command:
-
-```bash
-npx claude-mem telemetry disable
-```
-
-The standard [`DO_NOT_TRACK`](https://consoledonottrack.com) environment variable is also honored and overrides everything. The installer asks once at the end of `npx claude-mem install` so the default is never silent for new installs — your answer (either way) is remembered and never re-asked, and the prompt is skipped entirely when `DO_NOT_TRACK` is set or in CI/non-interactive installs.
+The instrumentation code below is left in the tree unreached, so upstream syncs
+keep applying cleanly. The rest of this page describes what upstream collects,
+and is kept only as a record of what the disabled path would have sent.
+</Warning>
 
 ## How instrumentation works
 

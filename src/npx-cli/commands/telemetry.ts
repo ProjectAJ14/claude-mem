@@ -1,10 +1,12 @@
 /**
- * `npx claude-mem telemetry [status|enable|disable]` — manage anonymous usage
- * analytics. Telemetry is ON by default (opt-out): anonymous events only,
- * identified by a random install UUID. Turn it off anytime with
- * `telemetry disable`, CLAUDE_MEM_TELEMETRY=0, or DO_NOT_TRACK=1.
+ * `npx claude-mem telemetry [status|enable|disable]` — upstream's control
+ * surface for anonymous usage analytics.
  *
- * Full privacy documentation: https://docs.claude-mem.ai/telemetry
+ * Fork: analytics are removed. explainTelemetryConsent() returns false
+ * unconditionally, so `status` always reports DISABLED and `enable` refuses
+ * rather than writing a config that would not be honored. `disable` is kept
+ * so anyone scripting it still gets a success, and so a telemetry.json left
+ * over from an upstream install gets its opt-out recorded.
  */
 
 import * as p from '@clack/prompts';
@@ -102,13 +104,13 @@ const SOURCE_LABELS: Record<TelemetryConsentSource, string> = {
   DO_NOT_TRACK: 'DO_NOT_TRACK environment variable',
   env: 'CLAUDE_MEM_TELEMETRY environment variable',
   config: 'telemetry.json config file',
-  default: 'default (on — no opt-out recorded)',
+  default: 'this fork (analytics removed — cannot be enabled)',
 };
 
 function printTelemetryUsage(): void {
   console.error(`Usage: ${styleText('bold', 'npx claude-mem telemetry [status|enable|disable]')}`);
   console.error('  status   Show whether telemetry is on and which setting decided it (default)');
-  console.error('  enable   Turn anonymous usage analytics back on (interactive)');
+  console.error('  enable   Refused — analytics are removed in this fork');
   console.error('  disable  Opt out of telemetry');
   console.error(`Docs: ${DOCS_URL}`);
 }
@@ -132,62 +134,9 @@ function runTelemetryStatus(): void {
   console.log(`${styleText('bold', 'Docs:')} ${DOCS_URL}`);
 }
 
-async function runTelemetryEnable(): Promise<void> {
-  if (!process.stdin.isTTY) {
-    console.error(styleText('red', 'telemetry enable requires an interactive terminal (consent prompt).'));
-    console.error(`Read what is collected first: ${DOCS_URL}`);
-    process.exit(1);
-  }
-
-  p.intro(styleText(['bgBlue', 'white'], ' claude-mem telemetry '));
-
-  p.note(
-    [
-      'Anonymous events only, identified by a random install UUID:',
-      ...EVENT_NAMES.map((name) => `  ${name}`),
-      '',
-      'Each event carries ONLY these fields:',
-      ...COLLECTED_FIELDS.map((line) => `  ${line}`),
-      '',
-      'Plus coarse location (country / region / city), derived server-side',
-      'at ingest from the request IP — the raw IP is discarded, never stored.',
-      '',
-      'NEVER collected — not now, not ever:',
-      '  prompts or conversation content, file paths, source code,',
-      '  project names, git remotes, search queries, error messages,',
-      '  IP addresses, hardware IDs, env values, emails.',
-      '',
-      `Full details: ${DOCS_URL}`,
-    ].join('\n'),
-    'What telemetry collects'
-  );
-
-  if (process.env.DO_NOT_TRACK && process.env.DO_NOT_TRACK !== '0' && process.env.DO_NOT_TRACK !== 'false') {
-    p.log.warn(
-      'DO_NOT_TRACK is set in your environment. It overrides everything: telemetry will remain OFF even after enabling here.'
-    );
-  }
-
-  const shouldEnable = await p.confirm({
-    message: 'Enable anonymous usage telemetry?',
-    initialValue: true,
-  });
-
-  if (p.isCancel(shouldEnable) || !shouldEnable) {
-    p.cancel('Telemetry remains disabled. Nothing was written.');
-    return;
-  }
-
-  // getOrCreateInstallId() persists a config if none exists; reuse its ID.
-  const installId = getOrCreateInstallId();
-  saveTelemetryConfig({
-    enabled: true,
-    installId,
-    decidedAt: new Date().toISOString(),
-  });
-
-  p.log.success(`Telemetry enabled. Config: ${getTelemetryConfigPath()}`);
-  p.outro(`Change your mind anytime: ${styleText('cyan', 'npx claude-mem telemetry disable')}`);
+function runTelemetryEnable(): void {
+  console.error(styleText('yellow', 'Telemetry cannot be enabled in this fork — the analytics path is removed.'));
+  console.error('Nothing was written. See src/services/telemetry/consent.ts.');
 }
 
 function runTelemetryDisable(): void {
@@ -210,7 +159,7 @@ export async function runTelemetryCommand(argv: string[] = []): Promise<void> {
       runTelemetryStatus();
       break;
     case 'enable':
-      await runTelemetryEnable();
+      runTelemetryEnable();
       break;
     case 'disable':
       runTelemetryDisable();

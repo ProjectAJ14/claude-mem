@@ -158,13 +158,13 @@ describe('installer trial-ready contract', () => {
     expect(source).not.toContain('CMEM_TRIAL_ACKNOWLEDGEMENT');
   });
 
-  it('requires OAuth before provider selection and contains no retired email path', () => {
+  // Fork: inverted. Upstream required the OAuth login to run before the
+  // provider screen; here neither exists — provider selection is a constant.
+  it('reaches provider selection with no login step and no retired email path', () => {
     const source = readFileSync(join(repoRoot, 'src/npx-cli/commands/install.ts'), 'utf-8');
-    const oauthIndex = source.indexOf('await requireInstallerOAuthLogin(version)');
-    const providerIndex = source.indexOf('await promptProvider(options, oauthPairing, version)');
-    expect(oauthIndex).toBeGreaterThan(-1);
-    expect(providerIndex).toBeGreaterThan(oauthIndex);
-    expect(source).toContain('p.multiselect<ProviderChoice>');
+    expect(source).toContain('await promptProvider(options)');
+    expect(source).not.toContain('await requireInstallerOAuthLogin(');
+    expect(source).not.toContain('p.multiselect<ProviderChoice>');
     expect(source).not.toContain('promptBrowserLogin');
     expect(source).not.toContain('CMEM_PRO_TRIAL_START_URL');
     expect(source).not.toContain('CLAUDE_MEM_ONLINE_OPTIN');
@@ -173,7 +173,7 @@ describe('installer trial-ready contract', () => {
 
   it('stops any respawned worker after provider settings are persisted', () => {
     const source = readFileSync(join(repoRoot, 'src/npx-cli/commands/install.ts'), 'utf-8');
-    const providerIndex = source.indexOf('await promptProvider(options, oauthPairing, version)');
+    const providerIndex = source.indexOf('await promptProvider(options)');
     const cutoverIndex = source.indexOf("'provider-cutover'", providerIndex);
     const workerStartIndex = source.indexOf('workerStartResult = await ensureWorkerStarted', cutoverIndex);
     expect(providerIndex).toBeGreaterThan(-1);

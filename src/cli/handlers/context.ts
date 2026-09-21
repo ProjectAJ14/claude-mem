@@ -17,7 +17,6 @@ import { loadFromFileOnce } from '../../shared/hook-settings.js';
 import { shouldTrackProject } from '../../shared/should-track-project.js';
 import { readStaleMarker } from '../../shared/oauth-token.js';
 import { normalizePlatformSource } from '../../shared/platform-source.js';
-import { proTrialLine, proTrialUrl, PLAN_USAGE_GAIN_PERCENT } from '../../shared/pro-promo.js';
 import {
   hasShownProFallbackNotice,
   isCmemGatewayUrl,
@@ -106,8 +105,9 @@ export const contextHandler: EventHandler = {
       && settings.CLAUDE_MEM_PROVIDER === 'openrouter'
       && isCmemGatewayUrl(settings.CLAUDE_MEM_OPENROUTER_BASE_URL);
     if (fallbackActive && !hasShownProFallbackNotice()) {
-      const fallbackNotice = 'Your claude-mem free trial ended — memory now runs on your Anthropic plan.\n'
-        + `Keep it off-plan (up to ${PLAN_USAGE_GAIN_PERCENT}% more usage): ${proTrialUrl('fallback')}`;
+      // Fork: the notice stays (a settings.json carried over from an upstream
+      // install can still have the fallback recorded) but the upsell does not.
+      const fallbackNotice = 'claude-mem is no longer using the cmem.ai gateway — memory runs on your Anthropic plan.';
       additionalContext = additionalContext
         ? `${fallbackNotice}\n\n${additionalContext}`
         : fallbackNotice;
@@ -141,7 +141,7 @@ export const contextHandler: EventHandler = {
       : null;
 
     const systemMessage = showTerminalOutput && displayContent
-      ? `${displayContent}\n\nView Observations Live @ http://localhost:${port}\n${proTrialLine('session-start')}${trialDaysLine ? `\n${trialDaysLine}` : ''}`
+      ? `${displayContent}\n\nView Observations Live @ http://localhost:${port}${trialDaysLine ? `\n${trialDaysLine}` : ''}`
       : undefined;
 
     return {

@@ -7,28 +7,43 @@ const source = readFileSync(
   'utf-8',
 );
 
+// Fork: no install requires a claude-mem account. Upstream gated every install
+// without `--provider claude|host` behind a browser OAuth round-trip to
+// cmem.ai; these assertions pin the gate staying gone through upstream syncs,
+// which is the only thing that would quietly reintroduce it.
 describe('provider account gate', () => {
-  it('exempts explicit claude and host installs from the account requirement', () => {
-    expect(source).toContain("return provider !== 'claude' && provider !== 'host';");
+  it('exempts every install from the account requirement', () => {
+    expect(source).toMatch(
+      /export function providerNeedsAccount\([^)]*\): boolean \{(?:[^}]|\n)*?\n  return false;\n\}/,
+    );
   });
 
-  it('still requires an account when no provider was named', () => {
-    expect(source).toContain('if (providerNeedsAccount(options.provider)) {');
+  it('never calls the installer OAuth login', () => {
+    expect(source).not.toContain('await requireInstallerOAuthLogin(');
   });
 
-  it('still treats openrouter and gemini as account-backed providers', () => {
+  it('leaves the pairing null for provider selection', () => {
+    expect(source).toContain('const oauthPairing: InstallerOAuthPairing | null = null;');
+  });
+
+  it('still treats openrouter and gemini as key-backed providers', () => {
     expect(source).toContain("if (options.provider !== 'gemini' && options.provider !== 'openrouter') return;");
   });
 });
 
 describe('install flow wiring', () => {
-  it('gates the OAuth login call behind providerNeedsAccount', () => {
-    expect(source).toMatch(
-      /if \(providerNeedsAccount\(options\.provider\)\) \{\s*\n\s*oauthPairing = await requireInstallerOAuthLogin\(version\);/,
-    );
+  it('offers no provider screen, because only the local Claude provider remains', () => {
+    expect(source).not.toContain('p.multiselect<ProviderChoice>');
+    expect(source).toContain("    selectedProvider = 'claude';");
   });
 
-  it('refuses CMEM Pro enrollment without a pairing', () => {
-    expect(source).toContain("throw new Error('CMEM Pro requires a signed-in claude-mem account.');");
+  it('carries no CMEM Pro enrollment branch', () => {
+    expect(source).not.toContain("selectedProvider === 'cmem'");
+    expect(source).not.toContain('completeCmemTrialPairing(pairing');
+  });
+
+  it('never links the cmem.ai trial from the installer', () => {
+    expect(source).not.toContain('pro-promo');
+    expect(source).not.toContain('PRO_TRIAL_PITCH');
   });
 });

@@ -95,10 +95,12 @@ describe('Install Non-TTY Support', () => {
     });
 
     it('fails before installation when a non-interactive run omits its provider', () => {
+      // Fork: the login step this used to be ordered against is gone, so the
+      // anchor is provider selection — the first thing the validation protects.
       const validationIndex = installSource.indexOf('validateNonInteractiveProvider(options, summary)');
-      const oauthIndex = installSource.indexOf('await requireInstallerOAuthLogin(version)');
+      const providerIndex = installSource.indexOf('await promptProvider(options)');
       expect(validationIndex).toBeGreaterThan(-1);
-      expect(validationIndex).toBeLessThan(oauthIndex);
+      expect(providerIndex).toBeGreaterThan(validationIndex);
       expect(installSource).toContain('A provider must be explicit when stdin is not interactive.');
     });
 

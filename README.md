@@ -140,7 +140,7 @@ Install claude-mem for Grok Bot:
 npx claude-mem install --ide grok-bot
 ```
 
-Grok Bot has no host hooks, so we watch the chat log files. Default is CMEM Pro, the hosted memory. Local observer is opt-in: `--provider host`. Installing this plugin does not install Cursor.
+Grok Bot has no host hooks, so we watch the chat log files. Default is the local host observer, which drives your logged-in Grok agent — no account, no API key. Installing this plugin does not install Cursor.
 
 **Awareness push pilot (LFG + Orifice):** needle observations (`decision`, `bugfix`, `security_alert`, `sensitive`) are appended as dated `- YYYY-MM-DD [awareness] …` lines into that bot's `memory/log/YYYY-MM.md`. Grok Bot already re-reads the log from disk. This does not write `profile.md`, user-memory, or project memory. Disable with `CLAUDE_MEM_GROK_BOT_AWARENESS_ENABLED=false`.
 
@@ -150,9 +150,7 @@ Install with a single command:
 npx claude-mem install
 ```
 
-The installer sets everything up first, then asks you to sign in to claude-mem in your browser (email magic link — no card required). Signing in provisions a memory key for your account and unlocks the **claude-mem observer**: memory that runs off-plan, free for your first 30 days, so you get up to 100% more usage from your plan. When the free trial ends, memory automatically falls back to your Anthropic plan unless you subscribe. After sign-in you pick your memory provider — the claude-mem observer, your own OpenRouter or Gemini key, or your Anthropic plan.
-
-Prefer to skip the sign-in? Pass an explicit `--provider` flag, set `CLAUDE_MEM_ONLINE_OPTIN=false`, or run in CI/non-interactive shells — the installer completes without any account interaction.
+**This fork asks for no account.** There is no sign-in step, no cmem.ai pairing and no usage analytics: the installer sets everything up and memory runs on your own Claude subscription through the Agent SDK (`CLAUDE_MEM_PROVIDER=claude`). Your own OpenRouter or Gemini key still works via `--provider openrouter|gemini`, and the host observer via `--provider host`.
 
 Or install for OpenCode:
 

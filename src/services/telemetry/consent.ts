@@ -14,16 +14,6 @@ export type TelemetryConfig = {
 
 const TELEMETRY_CONFIG_FILENAME = 'telemetry.json';
 
-/**
- * DO_NOT_TRACK convention (consoledonottrack.com): the variable counts as
- * "set" when it has any non-empty value other than '0' or 'false'.
- */
-function isDoNotTrackSet(env: NodeJS.ProcessEnv): boolean {
-  const value = env.DO_NOT_TRACK;
-  if (value === undefined || value === '') return false;
-  return value !== '0' && value !== 'false';
-}
-
 /** Which layer of the precedence chain decided the consent outcome. */
 export type TelemetryConsentSource = 'DO_NOT_TRACK' | 'env' | 'config' | 'default';
 
@@ -36,30 +26,22 @@ export type TelemetryConsentExplanation = {
  * Resolves whether telemetry is allowed AND which layer decided it.
  * Pure function — no I/O.
  *
- * Precedence (first match wins):
- * 1. DO_NOT_TRACK set (truthy) -> always off
- * 2. CLAUDE_MEM_TELEMETRY env: '0'/'false'/'off' -> off, '1'/'true'/'on' -> on
- * 3. telemetry.json config: enabled === true -> on, enabled === false -> off
- * 4. Default: on (opt-out — anonymous events only; see docs.claude-mem.ai/telemetry)
+ * Fork: analytics are off unconditionally, and nothing can turn them back on
+ * — not telemetry.json, not CLAUDE_MEM_TELEMETRY=1. Upstream's chain was
+ * DO_NOT_TRACK > CLAUDE_MEM_TELEMETRY > telemetry.json > default-on (opt-out).
+ *
+ * This is the one place every send path resolves consent through
+ * (telemetry.ts's hasConsent cache, cli-telemetry.ts, backfill.ts), so a
+ * `false` here means no PostHog client is ever constructed and no event is
+ * ever queued. The posthog-node dependency and the event-building code are
+ * left in the tree unused: deleting them would conflict with every upstream
+ * sync without changing what leaves the machine.
  */
 export function explainTelemetryConsent(
-  env: NodeJS.ProcessEnv,
-  config: TelemetryConfig | null
+  _env: NodeJS.ProcessEnv,
+  _config: TelemetryConfig | null
 ): TelemetryConsentExplanation {
-  if (isDoNotTrackSet(env)) return { enabled: false, source: 'DO_NOT_TRACK' };
-
-  const override = env.CLAUDE_MEM_TELEMETRY?.toLowerCase();
-  if (override === '0' || override === 'false' || override === 'off') {
-    return { enabled: false, source: 'env' };
-  }
-  if (override === '1' || override === 'true' || override === 'on') {
-    return { enabled: true, source: 'env' };
-  }
-
-  if (config?.enabled === true) return { enabled: true, source: 'config' };
-  if (config?.enabled === false) return { enabled: false, source: 'config' };
-
-  return { enabled: true, source: 'default' };
+  return { enabled: false, source: 'default' };
 }
 
 /**

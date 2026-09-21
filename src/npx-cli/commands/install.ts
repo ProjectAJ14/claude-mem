@@ -33,15 +33,12 @@ import {
 } from '../install/error-reporter.js';
 import { extractEresolveBlock, isEresolve, runNpmStrict } from '../install/npm-install-helper.js';
 import {
-  buildProviderLabels,
   CMEM_INSTALLER_OAUTH_POLL_URL,
   CMEM_INSTALLER_OAUTH_START_URL,
   CMEM_PRO_BASE_URL,
   CMEM_PRO_MODEL,
-  PROVIDER_PROMPT_MESSAGE,
 } from '../cmem-pro-costs.js';
 import { clearProFallback, isCmemGatewayUrl } from '../../shared/cmem-gateway.js';
-import { PRO_TRIAL_PITCH, proTrialUrl } from '../../shared/pro-promo.js';
 import {
   buildAnthropicMaxLocalSettings,
   buildCmemActivationSettings,
@@ -887,12 +884,11 @@ function mergeSettings(updates: Record<string, string>): boolean {
 
 type ProviderId = 'claude' | 'gemini' | 'openrouter' | 'host';
 /**
- * What the installer prompt may offer. `cmem` is a prompt-only sentinel: picking
- * it configures the generic OpenAI-compatible path (base URL + model + key) and
- * persists CLAUDE_MEM_PROVIDER='openrouter'. The worker only understands
- * 'claude' | 'gemini' | 'openrouter', so 'cmem' must never reach settings.json.
+ * What the installer may select. Identical to ProviderId since the fork dropped
+ * upstream's prompt-only `cmem` sentinel — every choice here is a provider the
+ * worker itself understands, so nothing needs mapping before settings.json.
  */
-type ProviderChoice = ProviderId | 'cmem';
+type ProviderChoice = ProviderId;
 // Phase 1d: Persisted DB literals (`server_beta_schema_migrations`, job_type
 // enums, `server-beta-worker` lockedBy marker) are intentionally preserved in
 // the source code; runtime-selector dual-accepts both `'server'` and
@@ -1069,13 +1065,6 @@ function openBrowser(url: string): void {
 
 async function promptProvider(
   options: InstallOptions,
-  /**
-   * Null only when login was skipped, which happens solely for an explicit
-   * `--provider claude`. That path cannot reach the CMEM branch below, which
-   * re-checks rather than assuming.
-   */
-  pairing: InstallerOAuthPairing | null,
-  version: string,
 ): Promise<ProviderId> {
   const initialProvider = (getSetting('CLAUDE_MEM_PROVIDER') as ProviderId) || 'claude';
   const persistedSettings = readPersistedInstallerSettings();
@@ -1111,69 +1100,11 @@ async function promptProvider(
     if (!isInteractive) {
       throw new Error('Non-interactive provider validation did not run.');
     }
-    const labels = buildProviderLabels();
-
-    // Multiselect gives both choices square controls. Exactly one provider is
-    // still required; selecting both re-opens the prompt instead of guessing.
-    while (true) {
-      const providerResult = await p.multiselect<ProviderChoice>({
-        message: PROVIDER_PROMPT_MESSAGE,
-        options: [
-          { value: 'cmem', label: labels.cmem, hint: labels.cmemHint },
-          { value: 'claude', label: labels.claude, hint: labels.claudeHint },
-        ],
-        // CMEM Pro pre-selected: it is the recommended path and the one the
-        // funnel is built around. Selecting it no longer means "pay now" —
-        // it opens the offer page to read first.
-        initialValues: ['cmem'],
-        required: true,
-      });
-      // @clack/prompts 1.8: isCancel narrows to unique CANCEL_SYMBOL, not generic symbol.
-      if (p.isCancel(providerResult) || !Array.isArray(providerResult)) {
-        p.cancel('Installation cancelled.');
-        process.exit(1);
-      }
-      if (providerResult.length === 1) {
-        selectedProvider = providerResult[0];
-        break;
-      }
-      log.warn('Select exactly one provider.');
-    }
-  }
-
-  // CMEM Pro: no new provider code. The worker's OpenRouter client is a generic
-  // OpenAI-compatible client whose endpoint and model both come from settings,
-  // so "use the CMEM observer model" is four settings writes and nothing else.
-  if (selectedProvider === 'cmem') {
-    if (!pairing) {
-      // Unreachable via the flag that skips login (it forces 'claude'), but a
-      // future caller passing null here would otherwise enroll against nothing.
-      throw new Error('CMEM Pro requires a signed-in claude-mem account.');
-    }
-    // The billing disclosure lives on the checkout page, not here. It is a term
-    // of the charge, so it belongs on the screen that takes the payment method,
-    // where it can be shown next to the price and the card field. Re-asking for
-    // it in the terminal made the user consent twice to the same thing, before
-    // ever seeing what they were agreeing to.
-    const enrollment = await completeCmemTrialPairing(pairing, version);
-    if (!enrollment) {
-      p.cancel('CMEM Pro setup was not completed. Run npx claude-mem install to try again.');
-      process.exit(1);
-    }
-    const cmemCredentials = resolveCmemMemoryCredentials(enrollment, persistedSettings);
-    if (!cmemCredentials) {
-      p.cancel('CMEM Pro did not return memory credentials. Run npx claude-mem install to try again.');
-      process.exit(1);
-    }
-
-    const wrote = mergeSettings(buildCmemActivationSettings(cmemCredentials));
-    if (!wrote) {
-      p.cancel('Could not save the CMEM Pro configuration.');
-      process.exit(1);
-    }
-    if (cmemCredentials.clearFallback) clearProFallback();
-    log.info('CMEM Pro configured with your signed-in memory key.');
-    return 'openrouter';
+    // Fork: the provider screen used to offer CMEM Pro (pre-selected) next to
+    // the local Claude provider, and picking Pro enrolled a cmem.ai trial. With
+    // the account removed there is exactly one provider left, so there is
+    // nothing to ask — this is the same setting `--provider claude` writes.
+    selectedProvider = 'claude';
   }
 
   if (selectedProvider === 'claude') {
@@ -1808,40 +1739,6 @@ export async function completeCmemTrialPairing(
 }
 
 /**
- * Final step of the install flow: tell the user telemetry is on by default
- * (opt-out) and let them decide. Asked ONCE — a telemetry.json with a recorded
- * enabled decision means the user already chose, and we never re-nag. An
- * installId-only config (written by the worker's ID bootstrap) does NOT count
- * as a decision. Respects DO_NOT_TRACK (skip entirely: they already answered),
- * CI, and non-TTY. See docs/public/telemetry.mdx for what is/isn't collected.
- */
-async function promptTelemetryOptIn(): Promise<void> {
-  if (!isInteractive) return;
-  if (process.env.CI) return;
-  const dnt = process.env.DO_NOT_TRACK;
-  if (dnt !== undefined && dnt !== '' && dnt !== '0' && dnt !== 'false') return;
-  const existing = loadTelemetryConfig();
-  if (existing?.enabled !== undefined) return;
-
-  p.log.message(styleText('dim', 
-    'Anonymous install ID only — no prompts, file paths, code, or project names, ever.\n'
-    + 'Details: https://docs.claude-mem.ai/telemetry · Change anytime: claude-mem telemetry disable',
-  ));
-  const consent = await p.confirm({
-    message: 'Share anonymized usage data with CMEM? It is on by default and helps us make the product better.',
-    initialValue: true,
-  });
-  if (p.isCancel(consent)) return;
-
-  saveTelemetryConfig({
-    enabled: consent === true,
-    installId: existing?.installId || randomUUID(),
-    decidedAt: new Date().toISOString(),
-  });
-  log.success(consent ? 'Thanks! Anonymized usage sharing is on.' : 'No problem — telemetry is off.');
-}
-
-/**
  * Whether an install still has an account question to answer.
  *
  * `--provider claude` and `--provider host` are exempt: they either run on the
@@ -1852,8 +1749,20 @@ async function promptTelemetryOptIn(): Promise<void> {
  * With no flag at all the provider screen can still offer CMEM Pro, so login
  * must happen first.
  */
-export function providerNeedsAccount(provider: InstallOptions['provider']): boolean {
-  return provider !== 'claude' && provider !== 'host';
+export function providerNeedsAccount(_provider: InstallOptions['provider']): boolean {
+  // Fork: no install ever needs a claude-mem account. Upstream gates every
+  // install without an explicit `--provider claude|host` behind a browser
+  // OAuth round-trip to cmem.ai, because the provider screen can still offer
+  // CMEM Pro. This fork does not offer it (see promptProvider), so there is no
+  // account question left to ask on any path — memory runs on the user's own
+  // Claude subscription through the Agent SDK.
+  //
+  // Every caller that acts on the login requirement reads this one predicate,
+  // so returning false here removes the gate itself and the "OAuth login
+  // complete" summary line together. The pairing/polling machinery below is
+  // left in place unused: deleting it would conflict with every upstream sync
+  // for no behavioural gain.
+  return false;
 }
 
 export interface InstallOptions {
@@ -2201,31 +2110,14 @@ async function runInstallCommandInner(options: InstallOptions, summary: InstallS
     log.info('Claude Code: leaving native auto-memory enabled unless you explicitly opt in to disabling it.');
   }
 
-  // Login is account-first for every install EXCEPT one that has already named
-  // a provider needing no claude-mem account. `--provider claude` runs memory
-  // on the user's own Anthropic plan and never touches cmem.ai, so gating it on
-  // browser OAuth made an unrelated cmem.ai outage fail an install that could
-  // have completed offline — and there is no account question left to ask,
-  // because the flag already answered it.
-  //
-  // Deliberately keyed on the explicit flag, not on reachability: a silent
-  // fallback to a local install whenever cmem.ai is down would quietly change
-  // what the user gets. This only skips a step the user's own flag made moot.
-  let oauthPairing: InstallerOAuthPairing | null = null;
-  if (providerNeedsAccount(options.provider)) {
-    oauthPairing = await requireInstallerOAuthLogin(version);
-    if (!oauthPairing) {
-      if (isInteractive) p.cancel('OAuth login is required to finish installation.');
-      else console.error('OAuth login is required to finish installation.');
-      process.exit(1);
-    }
-  } else {
-    const skipReason = options.provider === 'host'
-      ? 'host observer uses the logged-in host agent over a local OpenAI-compatible shim.'
-      : '--provider claude runs memory on your own Anthropic plan.';
-    log.info(`Skipping claude-mem login: ${skipReason}`);
-  }
-  const selectedProvider = await promptProvider(options, oauthPairing, version);
+  // Fork: there is no login step. Upstream made every install account-first
+  // (browser OAuth to cmem.ai) unless `--provider claude|host` had already
+  // answered the account question; here providerNeedsAccount() is always false,
+  // so no install ever pairs and this stays null for promptProvider. Memory
+  // runs on the user's own Claude subscription, and an unreachable cmem.ai
+  // cannot fail an install.
+  const oauthPairing: InstallerOAuthPairing | null = null;
+  const selectedProvider = await promptProvider(options);
   const cloudSyncConfigured = [
     getSetting('CLAUDE_MEM_CLOUD_SYNC_TOKEN'),
     getSetting('CLAUDE_MEM_CLOUD_SYNC_USER_ID'),
@@ -2413,16 +2305,12 @@ async function runInstallCommandInner(options: InstallOptions, summary: InstallS
     cloudSyncConfigured
       ? 'Memory syncs across your signed-in CMEM Pro agents and devices.'
       : `Everything stays in ${styleText('cyan', '~/.claude-mem')} on this machine.`,
-    ...(cloudSyncConfigured ? [] : [`${PRO_TRIAL_PITCH}: ${styleText('underline', proTrialUrl('installer'))}`]),
     ``,
     `${styleText('dim', `Optional: ${'/learn-codebase'} ingests a whole repo up front (~5 min)   ·   How it works: /how-it-works`)}`,
   ];
 
   if (isInteractive) {
     p.note(nextSteps.join('\n'), 'Next Steps');
-    // Deliberately the last interaction of the flow: consent is asked after
-    // the product is installed and working, never as a gate in front of it.
-    await promptTelemetryOptIn();
     if (failedIDEs.length > 0) {
       p.outro(styleText('yellow', 'claude-mem installed with some IDE setup failures.'));
     } else {

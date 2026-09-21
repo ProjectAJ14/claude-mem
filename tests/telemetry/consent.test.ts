@@ -23,153 +23,30 @@ const disabledConfig: TelemetryConfig = {
   decidedAt: '2026-06-09T00:00:00.000Z',
 };
 
-describe('resolveTelemetryConsent', () => {
-  it('defaults to on (opt-out) with null config and empty env', () => {
-    expect(resolveTelemetryConsent({}, null)).toBe(true);
-  });
+// Fork: analytics are removed, so consent is not a chain any more — it is a
+// constant. These cases are exactly the inputs upstream's precedence chain
+// treated as "on" (default with no config, CLAUDE_MEM_TELEMETRY=1/true/on, a
+// config with enabled=true, and any combination of them). Each one must still
+// resolve to disabled, because a sync that restored the chain would otherwise
+// re-enable PostHog silently.
+describe('telemetry consent is hard-off', () => {
+  const enablingInputs: Array<[string, NodeJS.ProcessEnv, TelemetryConfig | null]> = [
+    ['no env, no config (upstream default-on)', {}, null],
+    ['CLAUDE_MEM_TELEMETRY=1', { CLAUDE_MEM_TELEMETRY: '1' }, null],
+    ['CLAUDE_MEM_TELEMETRY=true', { CLAUDE_MEM_TELEMETRY: 'true' }, null],
+    ['CLAUDE_MEM_TELEMETRY=ON (case-insensitive upstream)', { CLAUDE_MEM_TELEMETRY: 'ON' }, null],
+    ['a config recording enabled=true', {}, enabledConfig],
+    ['an enabling env over a disabled config', { CLAUDE_MEM_TELEMETRY: '1' }, disabledConfig],
+    ['DO_NOT_TRACK explicitly switched off', { DO_NOT_TRACK: '0' }, enabledConfig],
+    ['a config with no decision recorded', {}, { installId: 'x', decidedAt: '' }],
+  ];
 
-  it('a config without an enabled decision falls through to the default (on)', () => {
-    const undecided: TelemetryConfig = {
-      installId: '00000000-0000-4000-8000-000000000002',
-      decidedAt: '',
-    };
-    expect(resolveTelemetryConsent({}, undecided)).toBe(true);
-    expect(explainTelemetryConsent({}, undecided)).toEqual({ enabled: true, source: 'default' });
-  });
-
-  it('DO_NOT_TRACK=1 beats an enabled config', () => {
-    expect(resolveTelemetryConsent({ DO_NOT_TRACK: '1' }, enabledConfig)).toBe(false);
-  });
-
-  it('DO_NOT_TRACK beats CLAUDE_MEM_TELEMETRY=1', () => {
-    expect(
-      resolveTelemetryConsent({ DO_NOT_TRACK: '1', CLAUDE_MEM_TELEMETRY: '1' }, enabledConfig)
-    ).toBe(false);
-  });
-
-  it('any non-empty DO_NOT_TRACK value other than 0/false disables', () => {
-    expect(resolveTelemetryConsent({ DO_NOT_TRACK: 'true' }, enabledConfig)).toBe(false);
-    expect(resolveTelemetryConsent({ DO_NOT_TRACK: 'yes' }, enabledConfig)).toBe(false);
-    expect(resolveTelemetryConsent({ DO_NOT_TRACK: 'anything' }, enabledConfig)).toBe(false);
-  });
-
-  it('DO_NOT_TRACK=0 does not disable', () => {
-    expect(resolveTelemetryConsent({ DO_NOT_TRACK: '0' }, enabledConfig)).toBe(true);
-  });
-
-  it('DO_NOT_TRACK=false does not disable', () => {
-    expect(resolveTelemetryConsent({ DO_NOT_TRACK: 'false' }, enabledConfig)).toBe(true);
-  });
-
-  it('empty-string DO_NOT_TRACK counts as not set', () => {
-    expect(resolveTelemetryConsent({ DO_NOT_TRACK: '' }, enabledConfig)).toBe(true);
-    expect(resolveTelemetryConsent({ DO_NOT_TRACK: '' }, disabledConfig)).toBe(false);
-  });
-
-  it('CLAUDE_MEM_TELEMETRY=0 beats an enabled config', () => {
-    expect(resolveTelemetryConsent({ CLAUDE_MEM_TELEMETRY: '0' }, enabledConfig)).toBe(false);
-    expect(resolveTelemetryConsent({ CLAUDE_MEM_TELEMETRY: 'false' }, enabledConfig)).toBe(false);
-    expect(resolveTelemetryConsent({ CLAUDE_MEM_TELEMETRY: 'off' }, enabledConfig)).toBe(false);
-  });
-
-  it('CLAUDE_MEM_TELEMETRY=1 enables without any config', () => {
-    expect(resolveTelemetryConsent({ CLAUDE_MEM_TELEMETRY: '1' }, null)).toBe(true);
-    expect(resolveTelemetryConsent({ CLAUDE_MEM_TELEMETRY: 'true' }, null)).toBe(true);
-    expect(resolveTelemetryConsent({ CLAUDE_MEM_TELEMETRY: 'on' }, null)).toBe(true);
-  });
-
-  it('CLAUDE_MEM_TELEMETRY=1 beats a disabled config', () => {
-    expect(resolveTelemetryConsent({ CLAUDE_MEM_TELEMETRY: '1' }, disabledConfig)).toBe(true);
-  });
-
-  it('CLAUDE_MEM_TELEMETRY values are case-insensitive', () => {
-    expect(resolveTelemetryConsent({ CLAUDE_MEM_TELEMETRY: 'OFF' }, enabledConfig)).toBe(false);
-    expect(resolveTelemetryConsent({ CLAUDE_MEM_TELEMETRY: 'ON' }, null)).toBe(true);
-  });
-
-  it('unrecognized CLAUDE_MEM_TELEMETRY values fall through to config', () => {
-    expect(resolveTelemetryConsent({ CLAUDE_MEM_TELEMETRY: 'maybe' }, disabledConfig)).toBe(false);
-    expect(resolveTelemetryConsent({ CLAUDE_MEM_TELEMETRY: 'maybe' }, null)).toBe(true);
-  });
-
-  it('config enabled=true enables with empty env', () => {
-    expect(resolveTelemetryConsent({}, enabledConfig)).toBe(true);
-  });
-
-  it('config enabled=false stays off', () => {
-    expect(resolveTelemetryConsent({}, disabledConfig)).toBe(false);
-  });
-});
-
-describe('explainTelemetryConsent', () => {
-  it('attributes DO_NOT_TRACK as the deciding layer', () => {
-    expect(explainTelemetryConsent({ DO_NOT_TRACK: '1' }, enabledConfig)).toEqual({
-      enabled: false,
-      source: 'DO_NOT_TRACK',
+  for (const [label, env, config] of enablingInputs) {
+    it(`resolves off: ${label}`, () => {
+      expect(resolveTelemetryConsent(env, config)).toBe(false);
+      expect(explainTelemetryConsent(env, config)).toEqual({ enabled: false, source: 'default' });
     });
-  });
-
-  it('DO_NOT_TRACK wins over an enabling env override', () => {
-    expect(
-      explainTelemetryConsent({ DO_NOT_TRACK: '1', CLAUDE_MEM_TELEMETRY: '1' }, enabledConfig)
-    ).toEqual({ enabled: false, source: 'DO_NOT_TRACK' });
-  });
-
-  it('attributes CLAUDE_MEM_TELEMETRY to the env layer (off)', () => {
-    expect(explainTelemetryConsent({ CLAUDE_MEM_TELEMETRY: '0' }, enabledConfig)).toEqual({
-      enabled: false,
-      source: 'env',
-    });
-  });
-
-  it('attributes CLAUDE_MEM_TELEMETRY to the env layer (on)', () => {
-    expect(explainTelemetryConsent({ CLAUDE_MEM_TELEMETRY: 'on' }, null)).toEqual({
-      enabled: true,
-      source: 'env',
-    });
-  });
-
-  it('attributes a config decision to the config layer', () => {
-    expect(explainTelemetryConsent({}, enabledConfig)).toEqual({
-      enabled: true,
-      source: 'config',
-    });
-    expect(explainTelemetryConsent({}, disabledConfig)).toEqual({
-      enabled: false,
-      source: 'config',
-    });
-  });
-
-  it('falls back to default-on (opt-out) with no env and no config', () => {
-    expect(explainTelemetryConsent({}, null)).toEqual({ enabled: true, source: 'default' });
-  });
-
-  it('unrecognized env values fall through to config/default', () => {
-    expect(explainTelemetryConsent({ CLAUDE_MEM_TELEMETRY: 'maybe' }, disabledConfig)).toEqual({
-      enabled: false,
-      source: 'config',
-    });
-    expect(explainTelemetryConsent({ CLAUDE_MEM_TELEMETRY: 'maybe' }, null)).toEqual({
-      enabled: true,
-      source: 'default',
-    });
-  });
-
-  it('agrees with resolveTelemetryConsent for every layer', () => {
-    const cases: Array<[NodeJS.ProcessEnv, TelemetryConfig | null]> = [
-      [{ DO_NOT_TRACK: '1' }, enabledConfig],
-      [{ CLAUDE_MEM_TELEMETRY: '0' }, enabledConfig],
-      [{ CLAUDE_MEM_TELEMETRY: '1' }, disabledConfig],
-      [{}, enabledConfig],
-      [{}, disabledConfig],
-      [{}, null],
-    ];
-    for (const [env, config] of cases) {
-      expect(explainTelemetryConsent(env, config).enabled).toBe(
-        resolveTelemetryConsent(env, config)
-      );
-    }
-  });
+  }
 });
 
 describe('telemetry config persistence', () => {
@@ -259,8 +136,8 @@ describe('telemetry config persistence', () => {
       const config = loadTelemetryConfig();
       expect(config?.installId).toBe(id);
       expect(config?.enabled).toBeUndefined();
-      // The opt-out default must survive the ID bootstrap.
-      expect(explainTelemetryConsent({}, config)).toEqual({ enabled: true, source: 'default' });
+      // Fork: the ID bootstrap cannot turn analytics on either.
+      expect(explainTelemetryConsent({}, config)).toEqual({ enabled: false, source: 'default' });
     });
 
     it('returns the existing install ID on subsequent calls', () => {

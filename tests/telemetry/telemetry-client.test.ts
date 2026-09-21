@@ -6,9 +6,12 @@ import { postHogConstructorCalls, postHogCaptureCalls } from '../preload';
 import { captureEvent, __resetTelemetryForTests } from '../../src/services/telemetry/telemetry';
 
 /**
- * Guards the PostHog client construction options. The posthog-node SDK stamps
- * $geoip_disable: true on every event unless disableGeoip: false is passed —
- * losing ingest-side coarse location for every worker event.
+ * Fork: the load-bearing analytics test. Upstream guarded the PostHog client's
+ * construction options; here the guarantee is that the client is never
+ * constructed and no event is ever queued, under the strongest "turn it on"
+ * input the upstream consent chain accepted (CLAUDE_MEM_TELEMETRY=1, no
+ * DO_NOT_TRACK). explainTelemetryConsent() is hard-off, and this is what would
+ * catch an upstream sync quietly restoring the chain.
  *
  * posthog-node is mocked globally in tests/preload.ts (it cannot be mocked
  * per-file: telemetry.ts is imported transitively by many other test files in
@@ -53,18 +56,16 @@ afterAll(() => {
 });
 
 describe('PostHog client construction', () => {
-  it('constructs the client with disableGeoip: false so ingest-side geolocation works', () => {
+  it('never constructs a client, even with CLAUDE_MEM_TELEMETRY=1', () => {
     captureEvent('test_event');
 
-    expect(postHogConstructorCalls.length).toBe(1);
-    expect(postHogConstructorCalls[0].options.disableGeoip).toBe(false);
+    expect(postHogConstructorCalls.length).toBe(0);
   });
 
-  it('reuses the client and queues the capture', () => {
+  it('queues no capture', () => {
     captureEvent('test_event_2');
 
-    expect(postHogConstructorCalls.length).toBe(1);
-    expect(postHogCaptureCalls.length).toBe(2);
-    expect(postHogCaptureCalls[1].event).toBe('test_event_2');
+    expect(postHogConstructorCalls.length).toBe(0);
+    expect(postHogCaptureCalls.length).toBe(0);
   });
 });

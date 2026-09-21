@@ -41,7 +41,7 @@ ${styleText('bold', 'Runtime Commands')} (requires Bun, delegates to installed p
   ${styleText('cyan', 'npx claude-mem restart')}              Restart worker service
   ${styleText('cyan', 'npx claude-mem status')}               Show worker status
   ${styleText('cyan', 'npx claude-mem doctor')}               Diagnose install/runtime health (bun, uv, worker)
-  ${styleText('cyan', 'npx claude-mem telemetry status|enable|disable')}   Manage anonymous telemetry (on by default, opt-out)
+  ${styleText('cyan', 'npx claude-mem telemetry status|enable|disable')}   Telemetry status (removed in this fork — always off)
   ${styleText('cyan', 'npx claude-mem server start')}         Start server service
   ${styleText('cyan', 'npx claude-mem server stop')}          Stop server service
   ${styleText('cyan', 'npx claude-mem server restart')}       Restart server service
@@ -92,10 +92,9 @@ function parseInstallOptions(argv: string[]): InstallOptions {
   }
   const ide = flag('ide');
   let resolvedProvider = provider as InstallOptions['provider'];
-  // Non-TTY grok-bot: CMEM Pro is the user default. The 'cmem' sentinel is
-  // prompt-only (install.ts maps it to openrouter + cmem-observer + OAuth).
-  // Interactive installs still get the CMEM/Claude prompt. `--provider host`
-  // stays an explicit loopback-shim opt-in.
+  // Non-TTY grok-bot: the host observer is the default (see
+  // installer-provider-choice.ts). `--provider host` remains an explicit
+  // opt-in for every other IDE.
   if (!resolvedProvider && process.stdin.isTTY !== true) {
     const implicit = resolveInstallerProviderChoice({ ide });
     if (implicit) {
