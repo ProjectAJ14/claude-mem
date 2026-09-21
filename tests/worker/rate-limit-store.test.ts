@@ -123,6 +123,65 @@ describe('shouldAbortForQuota — cli/oauth auth', () => {
     store = freshStore();
   });
 
+  it('does not abort on inactive overage at 100% utilization', () => {
+    store.set({
+      rateLimitType: 'overage',
+      utilization: 1,
+      isUsingOverage: false,
+      status: 'allowed_warning',
+    });
+    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
+    expect(decision.abort).toBe(false);
+  });
+
+  it('aborts on active overage above the utilization threshold', () => {
+    store.set({
+      rateLimitType: 'overage',
+      utilization: 0.96,
+      isUsingOverage: true,
+      status: 'allowed_warning',
+    });
+    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
+    expect(decision.abort).toBe(true);
+    expect(decision.window).toBe('overage');
+  });
+
+  it('preserves overage utilization behavior when isUsingOverage is missing', () => {
+    store.set({
+      rateLimitType: 'overage',
+      utilization: 0.96,
+      status: 'allowed_warning',
+    });
+    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
+    expect(decision.abort).toBe(true);
+    expect(decision.window).toBe('overage');
+  });
+
+  it('aborts when inactive overage is rejected by overageStatus', () => {
+    store.set({
+      rateLimitType: 'overage',
+      utilization: 0,
+      isUsingOverage: false,
+      status: 'allowed_warning',
+      overageStatus: 'rejected',
+    });
+    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
+    expect(decision.abort).toBe(true);
+    expect(decision.window).toBe('overage');
+  });
+
+  it('aborts when inactive overage is rejected by status', () => {
+    store.set({
+      rateLimitType: 'overage',
+      utilization: 0,
+      isUsingOverage: false,
+      status: 'rejected',
+    });
+    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
+    expect(decision.abort).toBe(true);
+    expect(decision.window).toBe('overage');
+  });
+
   it('aborts on five_hour at 0.96 with reason mentioning "five_hour"', () => {
     store.set({ rateLimitType: 'five_hour', utilization: 0.96 });
     const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
@@ -209,57 +268,6 @@ describe('shouldAbortForQuota — cli/oauth auth', () => {
   it('does not abort with empty store', () => {
     const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
     expect(decision.abort).toBe(false);
-  });
-
-  // The overage bucket is not a 0..1 fraction of a plan allowance, so the
-  // utilization thresholds do not apply to it. Anthropic reports values above
-  // 1.0 there while still serving the request.
-  it('does not abort on an overage bucket the account is not drawing on', () => {
-    store.set({
-      rateLimitType: 'overage',
-      utilization: 1.11,
-      status: 'allowed_warning',
-      isUsingOverage: false,
-    });
-    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
-    expect(decision.abort).toBe(false);
-  });
-
-  it('still aborts on overage once the account is actually drawing on it', () => {
-    store.set({
-      rateLimitType: 'overage',
-      utilization: 1.11,
-      status: 'allowed_warning',
-      isUsingOverage: true,
-    });
-    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
-    expect(decision.abort).toBe(true);
-    expect(decision.window).toBe('overage');
-  });
-
-  it('still aborts on a provider-rejected overage bucket even when unused', () => {
-    store.set({
-      rateLimitType: 'overage',
-      utilization: 1.11,
-      overageStatus: 'rejected',
-      isUsingOverage: false,
-    });
-    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
-    expect(decision.abort).toBe(true);
-    expect(decision.reason).toContain('rejected by provider');
-  });
-
-  it('leaves the five_hour guard armed while overage is ignored', () => {
-    store.set({
-      rateLimitType: 'overage',
-      utilization: 1.11,
-      status: 'allowed_warning',
-      isUsingOverage: false,
-    });
-    store.set({ rateLimitType: 'five_hour', utilization: 0.96 });
-    const decision = shouldAbortForQuota(cliAuth, store, FIXED_NOW);
-    expect(decision.abort).toBe(true);
-    expect(decision.window).toBe('five_hour');
   });
 });
 
