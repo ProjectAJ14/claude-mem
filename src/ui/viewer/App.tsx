@@ -3,7 +3,7 @@ import { Header } from './components/Header';
 import { Feed } from './components/Feed';
 import { ContextSettingsModal } from './components/ContextSettingsModal';
 import { LogsDrawer } from './components/LogsModal';
-import { WelcomeCard, getStoredWelcomeDismissed, setStoredWelcomeDismissed } from './components/WelcomeCard';
+import { WelcomeCard, setStoredWelcomeDismissed } from './components/WelcomeCard';
 import { useSSE } from './hooks/useSSE';
 import { useSettings } from './hooks/useSettings';
 import { usePagination } from './hooks/usePagination';
@@ -15,7 +15,13 @@ export function App() {
   const [currentFilter, setCurrentFilter] = useState('');
   const [contextPreviewOpen, setContextPreviewOpen] = useState(false);
   const [logsModalOpen, setLogsModalOpen] = useState(false);
-  const [welcomeDismissed, setWelcomeDismissed] = useState<boolean>(getStoredWelcomeDismissed);
+  // Fork: the onboarding card never opens on its own. Upstream seeded this from
+  // localStorage under a version-suffixed key ('…-dismissed-v3'), so every key
+  // bump upstream ships re-shows the whole intro to someone who dismissed it
+  // releases ago. Starting dismissed drops the storage read entirely — the card
+  // is still reachable on demand from the header's help button, which is the
+  // only way it opens now.
+  const [welcomeDismissed, setWelcomeDismissed] = useState<boolean>(true);
   const [paginatedObservations, setPaginatedObservations] = useState<Observation[]>([]);
   const [paginatedSummaries, setPaginatedSummaries] = useState<Summary[]>([]);
   const [paginatedPrompts, setPaginatedPrompts] = useState<UserPrompt[]>([]);
